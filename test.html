@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Client-side Auth Methoden</title>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; padding: 2em; }
+    button, input { margin: 0.5em 0; padding: 0.5em; font-size: 1em; }
+    #result { margin-top: 1em; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>Authenticatie-opties (zonder server)</h2>
+
+  <!-- 1. Password hash check -->
+  <div>
+    <input type="password" id="password" placeholder="Wachtwoord (1234)">
+    <button onclick="checkPassword()">Login met hash</button>
+  </div>
+
+  <!-- 2. Bestandsauth -->
+  <div>
+    <input type="file" id="keyfile">
+    <button onclick="checkFile()">Upload .key bestand</button>
+  </div>
+
+  <!-- 3. Simpele biometrie prompt -->
+  <div>
+    <button onclick="biometric()">Simuleer biometrie</button>
+  </div>
+
+  <!-- 4. Credential Management API -->
+  <div>
+    <button onclick="storeCreds()">Store Credential</button>
+    <button onclick="getCreds()">Get Credential</button>
+  </div>
+
+  <!-- 5. WebAuthn -->
+  <div>
+    <button onclick="createWebAuthn()">WebAuthn Register</button>
+    <button onclick="getWebAuthn()">WebAuthn Login</button>
+  </div>
+
+  <div id="result"></div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const set = msg => $('result').innerText = msg;
+
+    // 1. SHA-256 wachtwoord check
+    async function checkPassword() {
+      const correctHash = "03ac674216f3e15c761ee1a5e255f067953623c8f966b8be3cbbf6c60d7f7b6d"; // hash van "1234"
+      const input = $('password').value;
+      const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+      const hashArray = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+      set(hashArray === correctHash ? "✅ Wachtwoord correct" : "❌ Wachtwoord fout");
+    }
+
+    // 2. Bestand vergelijken
+    function checkFile() {
+      const file = $('keyfile').files[0];
+      if (!file) return set("❌ Geen bestand gekozen");
+      const reader = new FileReader();
+      reader.onload = () => {
+        const content = reader.result.trim();
+        set(content === "SECRETKEY123" ? "✅ Key match" : "❌ Ongeldige key");
+      };
+      reader.readAsText(file);
+    }
+
+    // 3. Fake biometrie
+    function biometric() {
+      confirm("Scan vinger?") ? set("✅ Biometrie geslaagd") : set("❌ Geannuleerd");
+    }
+
+    // 4. Credential Management API
+    async function storeCreds() {
+      const cred = new PasswordCredential({
+        id: "demo",
+        password: "geheim"
+      });
+      await navigator.credentials.store(cred);
+      set("✅ Credential opgeslagen");
+    }
+
+    async function getCreds() {
+      const cred = await navigator.credentials.get({ password: true });
+      if (cred) {
+        set(`✅ Gebruiker: ${cred.id}, Wachtwoord: ${cred.password}`);
+      } else {
+        set("❌ Geen credentials gevonden");
+      }
+    }
+
+    // 5. WebAuthn (werkt alleen over HTTPS)
+    let credential;
+    async function createWebAuthn() {
+      try {
+        credential = await navigator.credentials.create({
+          publicKey: {
+            challenge: new Uint8Array(32),
+            rp: { name: "DemoSite" },
+            user: {
+              id: new Uint8Array([1,2,3,4]),
+              name: "demo",
+              displayName: "demo"
+            },
+            pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+            timeout: 60000,
+            attestation: "direct"
+          }
+        });
+        set("✅ WebAuthn geregistreerd");
+      } catch (e) {
+        set("❌ WebAuthn fout: " + e.message);
+      }
+    }
+
+    async function getWebAuthn() {
+      if (!credential || !credential.rawId) return set("❌ Eerst registreren");
+      try {
+        await navigator.credentials.get({
+          publicKey: {
+            challenge: new Uint8Array(32),
+            allowCredentials: [{
+              type: "public-key",
+              id: credential.rawId
+            }],
+            timeout: 60000
+          }
+        });
+        set("✅ WebAuthn login geslaagd");
+      } catch (e) {
+        set("❌ WebAuthn login fout: " + e.message);
+      }
+    }
+  </script>
+</body>
+</html>
